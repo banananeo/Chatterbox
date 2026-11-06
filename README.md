@@ -269,7 +269,7 @@ Chatterbox is designed for communication over a local network.
 **Developed by:**
 
 - Sabareesh C
-- Arul
+- Iraiarulanandham Sachithanandam
 
 ---
 
