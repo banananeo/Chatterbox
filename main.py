@@ -1,618 +1,530 @@
-
+import socket
+import threading
 import customtkinter as ctk
-import ipaddress
+
+from welcome_screen import ChatterboxWelcome
+from host_screen import ChatterboxHost
+from join_screen import ChatterboxJoin
+from server.chat_server import ChatServer
+from client.chat_client import ChatClient
+from chat_screen import ChatterboxChat
 
 
-# --------------------------------
-# CHATTERBOX SETTINGS
-# --------------------------------
-
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
-
-BG = "#080D1A"
-PANEL = "#111A2B"
-CARD = "#151F33"
-BLUE = "#4F8CFF"
-BLUE_HOVER = "#3975E8"
-PURPLE = "#8B5CF6"
-WHITE = "#F8FAFC"
-MUTED = "#94A3B8"
-BORDER = "#26344B"
-
-
-class Chatterbox:
+class ChatterboxApp:
 
     def __init__(self, root):
-
         self.root = root
-        self.username = ""
 
-        self.root.title("chatterbox | Local Messaging")
-        self.root.geometry("1100x720")
-        self.root.minsize(900, 620)
-        self.root.configure(fg_color=BG)
+        # Current screen
+        self.current_view = None
+        self.chat_view = None
 
-        # Main screen container
-        self.screen = ctk.CTkFrame(
-            self.root,
-            fg_color="transparent"
+        # Server variables
+        self.server = None
+        self.server_thread = None
+        self.server_error = None
+        self.server_port = None
+
+        # Client variables
+        self.host_username = None
+        self.current_username = None
+        self.host_client = None
+        self.join_client = None
+
+        # Messages received before the chat screen opens
+        self.pending_server_messages = []
+
+        # Window configuration
+        self.root.title("Chatterbox | Local Messaging")
+        self.root.geometry("1180x760")
+        self.root.minsize(960, 680)
+        self.root.configure(fg_color="#F4FBF7")
+
+        self.root.protocol(
+            "WM_DELETE_WINDOW",
+            self.close_application
         )
-        self.screen.pack(
-            fill="both",
-            expand=True,
-            padx=45,
-            pady=25
-        )
 
-        self.show_welcome_screen()
+        self.show_welcome()
 
     # --------------------------------
     # SCREEN MANAGEMENT
     # --------------------------------
 
-    def clear_screen(self):
+    def _show_view(self, view):
+        if self.current_view is not None:
+            self.current_view.destroy()
 
-        for widget in self.screen.winfo_children():
-            widget.destroy()
-
-    def show_welcome_screen(self):
-
-        self.clear_screen()
-
-        self.screen.grid_columnconfigure(0, weight=1)
-        self.screen.grid_columnconfigure(1, weight=1)
-        self.screen.grid_rowconfigure(1, weight=1)
-
-        self.create_header()
-        self.create_hero()
-        self.create_connection_card()
-        self.create_footer()
-
-    # --------------------------------
-    # HEADER
-    # --------------------------------
-
-    def create_header(self):
-
-        header = ctk.CTkFrame(
-            self.screen,
-            fg_color="transparent"
-        )
-
-        header.grid(
-            row=0,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            pady=(5, 30)
-        )
-
-        ctk.CTkLabel(
-            header,
-            text="●  chatterbox",
-            font=("Segoe UI", 24, "bold"),
-            text_color=WHITE
-        ).pack(side="left")
-
-        ctk.CTkLabel(
-            header,
-            text="●  LOCAL NETWORK",
-            font=("Segoe UI", 10, "bold"),
-            text_color="#4ADE80",
-            fg_color="#142B28",
-            corner_radius=20,
-            padx=15,
-            pady=8
-        ).pack(side="right")
-
-    # --------------------------------
-    # HERO SECTION
-    # --------------------------------
-
-    def create_hero(self):
-
-        hero = ctk.CTkFrame(
-            self.screen,
-            fg_color="transparent"
-        )
-
-        hero.grid(
-            row=1,
-            column=0,
-            sticky="nsew",
-            padx=(0, 35),
-            pady=25
-        )
-
-        ctk.CTkLabel(
-            hero,
-            text="YOUR PRIVATE NETWORK SPACE",
-            font=("Segoe UI", 11, "bold"),
-            text_color=BLUE
-        ).pack(anchor="w", pady=(25, 20))
-
-        ctk.CTkLabel(
-            hero,
-            text="Good conversations.\nNo distance.",
-            font=("Segoe UI", 39, "bold"),
-            text_color=WHITE,
-            justify="left"
-        ).pack(anchor="w", pady=(0, 20))
-
-        ctk.CTkLabel(
-            hero,
-            text=(
-                "Connect with people on your local network.\n"
-                "Share messages instantly, without relying\n"
-                "on the internet."
-            ),
-            font=("Segoe UI", 14),
-            text_color=MUTED,
-            justify="left"
-        ).pack(anchor="w", pady=(0, 35))
-
-        self.create_feature(
-            hero, "01",
-            "Private by design",
-            "Conversations stay within your local network."
-        )
-
-        self.create_feature(
-            hero, "02",
-            "Instant messaging",
-            "Exchange messages in real time."
-        )
-
-        self.create_feature(
-            hero, "03",
-            "Simple connections",
-            "Host a room or join an existing one."
-        )
-
-    def create_feature(self, parent, number, title, subtitle):
-
-        frame = ctk.CTkFrame(
-            parent,
-            fg_color="transparent"
-        )
-        frame.pack(fill="x", pady=9)
-
-        ctk.CTkLabel(
-            frame,
-            text=number,
-            font=("Segoe UI", 12, "bold"),
-            text_color=PURPLE,
-            width=35
-        ).pack(side="left", anchor="n")
-
-        text_frame = ctk.CTkFrame(
-            frame,
-            fg_color="transparent"
-        )
-        text_frame.pack(side="left", padx=12)
-
-        ctk.CTkLabel(
-            text_frame,
-            text=title,
-            font=("Segoe UI", 14, "bold"),
-            text_color=WHITE
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            text_frame,
-            text=subtitle,
-            font=("Segoe UI", 11),
-            text_color=MUTED
-        ).pack(anchor="w", pady=(3, 0))
-
-    # --------------------------------
-    # WELCOME CONNECTION CARD
-    # --------------------------------
-
-    def create_connection_card(self):
-
-        card = ctk.CTkFrame(
-            self.screen,
-            fg_color=PANEL,
-            corner_radius=22,
-            border_width=1,
-            border_color=BORDER
-        )
-
-        card.grid(
-            row=1,
-            column=1,
-            sticky="nsew",
-            padx=(10, 0),
-            pady=10
-        )
-
-        content = ctk.CTkFrame(
-            card,
-            fg_color="transparent"
-        )
-        content.pack(
+        self.current_view = view
+        self.current_view.pack(
             fill="both",
-            expand=True,
-            padx=35,
-            pady=35
+            expand=True
         )
 
-        ctk.CTkLabel(
-            content,
-            text="Get started",
-            font=("Segoe UI", 26, "bold"),
-            text_color=WHITE
-        ).pack(anchor="w", pady=(5, 8))
-
-        ctk.CTkLabel(
-            content,
-            text="Choose how you want to connect.",
-            font=("Segoe UI", 12),
-            text_color=MUTED
-        ).pack(anchor="w", pady=(0, 30))
-
-        ctk.CTkLabel(
-            content,
-            text="YOUR USERNAME",
-            font=("Segoe UI", 11, "bold"),
-            text_color="#CBD5E1"
-        ).pack(anchor="w", pady=(0, 10))
-
-        self.username_entry = ctk.CTkEntry(
-            content,
-            height=48,
-            corner_radius=10,
-            placeholder_text="Enter your username",
-            font=("Segoe UI", 13),
-            fg_color="#0B1322",
-            border_color=BORDER
+    def show_welcome(self):
+        view = ChatterboxWelcome(
+            self.root,
+            on_host=self.show_host,
+            on_join=self.show_join
         )
-        self.username_entry.pack(fill="x")
 
-        if self.username:
-            self.username_entry.insert(0, self.username)
+        self._show_view(view)
 
-        self.status_label = ctk.CTkLabel(
-            content,
-            text="",
-            font=("Segoe UI", 11),
-            text_color="#F87171"
+    def show_host(self):
+        view = ChatterboxHost(
+            self.root,
+            on_back=self.leave_host_screen,
+            on_create=self.start_hosting
         )
-        self.status_label.pack(anchor="w", pady=(8, 12))
 
-        ctk.CTkButton(
-            content,
-            text="✦   Host a room",
-            height=52,
-            corner_radius=11,
-            font=("Segoe UI", 14, "bold"),
-            fg_color=BLUE,
-            hover_color=BLUE_HOVER,
-            command=self.open_host_screen
-        ).pack(fill="x", pady=(5, 12))
+        self._show_view(view)
 
-        ctk.CTkButton(
-            content,
-            text="↗   Join a room",
-            height=52,
-            corner_radius=11,
-            font=("Segoe UI", 14, "bold"),
-            fg_color="#202D43",
-            hover_color="#30415D",
-            text_color=WHITE,
-            command=self.open_join_screen
-        ).pack(fill="x")
+    def show_join(self):
+        view = ChatterboxJoin(
+            self.root,
+            on_back=self.show_welcome,
+            on_connect=self.connect_to_room
+        )
 
-        ctk.CTkLabel(
-            content,
-            text="No account required. Just connect and chat.",
-            font=("Segoe UI", 10),
-            text_color=MUTED
-        ).pack(pady=(25, 0))
+        self._show_view(view)
 
     # --------------------------------
-    # FOOTER
+    # NETWORK INFORMATION
     # --------------------------------
 
-    def create_footer(self):
-
-        ctk.CTkLabel(
-            self.screen,
-            text="CHATTERBOX  ©  2026  •  MADE FOR LOCAL CONNECTIONS",
-            font=("Segoe UI", 10),
-            text_color="#526078"
-        ).grid(
-            row=2,
-            column=0,
-            columnspan=2,
-            pady=(25, 5)
+    @staticmethod
+    def get_lan_ip():
+        probe = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_DGRAM
         )
-
-    # --------------------------------
-    # USERNAME VALIDATION
-    # --------------------------------
-
-    def validate_username(self):
-
-        username = self.username_entry.get().strip()
-
-        if not username:
-            self.status_label.configure(
-                text="Please enter a username."
-            )
-            return False
-
-        if len(username) > 20:
-            self.status_label.configure(
-                text="Username must be 20 characters or less."
-            )
-            return False
-
-        self.username = username
-        return True
-
-    # --------------------------------
-    # COMMON SCREEN COMPONENTS
-    # --------------------------------
-
-    def create_back_button(self):
-
-        ctk.CTkButton(
-            self.screen,
-            text="←  Back",
-            width=100,
-            height=35,
-            fg_color="transparent",
-            hover_color="#202D43",
-            text_color=MUTED,
-            command=self.show_welcome_screen
-        ).pack(anchor="w", pady=(5, 20))
-
-    def create_form_card(self, title, subtitle):
-
-        card = ctk.CTkFrame(
-            self.screen,
-            fg_color=PANEL,
-            corner_radius=22,
-            border_width=1,
-            border_color=BORDER
-        )
-
-        card.pack(
-            fill="both",
-            expand=True,
-            padx=170,
-            pady=(5, 25)
-        )
-
-        content = ctk.CTkFrame(
-            card,
-            fg_color="transparent"
-        )
-
-        content.pack(
-            fill="both",
-            expand=True,
-            padx=45,
-            pady=40
-        )
-
-        ctk.CTkLabel(
-            content,
-            text=title,
-            font=("Segoe UI", 27, "bold"),
-            text_color=WHITE
-        ).pack(anchor="w", pady=(5, 8))
-
-        ctk.CTkLabel(
-            content,
-            text=subtitle,
-            font=("Segoe UI", 12),
-            text_color=MUTED
-        ).pack(anchor="w", pady=(0, 30))
-
-        return content
-
-    def create_input(self, parent, label, placeholder, default=""):
-
-        ctk.CTkLabel(
-            parent,
-            text=label,
-            font=("Segoe UI", 11, "bold"),
-            text_color="#CBD5E1"
-        ).pack(anchor="w", pady=(10, 8))
-
-        entry = ctk.CTkEntry(
-            parent,
-            height=48,
-            corner_radius=10,
-            placeholder_text=placeholder,
-            font=("Segoe UI", 13),
-            fg_color="#0B1322",
-            border_color=BORDER
-        )
-
-        entry.pack(fill="x")
-
-        if default:
-            entry.insert(0, default)
-
-        return entry
-
-    # --------------------------------
-    # HOST ROOM SCREEN
-    # --------------------------------
-
-    def open_host_screen(self):
-
-        if not self.validate_username():
-            return
-
-        self.clear_screen()
-
-        self.create_back_button()
-
-        content = self.create_form_card(
-            "Host a room",
-            "Create a local chat server for others to join."
-        )
-
-        ctk.CTkLabel(
-            content,
-            text="HOSTING AS",
-            font=("Segoe UI", 11, "bold"),
-            text_color="#CBD5E1"
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            content,
-            text=self.username,
-            font=("Segoe UI", 15, "bold"),
-            text_color=BLUE
-        ).pack(anchor="w", pady=(8, 15))
-
-        self.host_port = self.create_input(
-            content,
-            "SERVER PORT",
-            "Enter port number",
-            "5000"
-        )
-
-        self.host_status = ctk.CTkLabel(
-            content,
-            text="",
-            font=("Segoe UI", 11),
-            text_color="#F87171"
-        )
-        self.host_status.pack(anchor="w", pady=12)
-
-        ctk.CTkButton(
-            content,
-            text="Start hosting",
-            height=50,
-            corner_radius=11,
-            font=("Segoe UI", 14, "bold"),
-            fg_color=BLUE,
-            hover_color=BLUE_HOVER,
-            command=self.start_hosting
-        ).pack(fill="x", pady=(10, 0))
-
-    def start_hosting(self):
-
-        port = self.host_port.get().strip()
-
-        if not port.isdigit() or not 1 <= int(port) <= 65535:
-            self.host_status.configure(
-                text="Enter a valid port (1–65535).",
-                text_color="#F87171"
-            )
-            return
-
-        self.host_status.configure(
-            text=f"Port {port} is valid. Server setup comes next.",
-            text_color="#4ADE80"
-        )
-
-        print(
-            f"{self.username} selected hosting on port {port}"
-        )
-
-    # --------------------------------
-    # JOIN ROOM SCREEN
-    # --------------------------------
-
-    def open_join_screen(self):
-
-        if not self.validate_username():
-            return
-
-        self.clear_screen()
-
-        self.create_back_button()
-
-        content = self.create_form_card(
-            "Join a room",
-            "Enter the host's network details to connect."
-        )
-
-        ctk.CTkLabel(
-            content,
-            text="JOINING AS",
-            font=("Segoe UI", 11, "bold"),
-            text_color="#CBD5E1"
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            content,
-            text=self.username,
-            font=("Segoe UI", 15, "bold"),
-            text_color=BLUE
-        ).pack(anchor="w", pady=(8, 15))
-
-        self.server_ip = self.create_input(
-            content,
-            "SERVER IP ADDRESS",
-            "e.g. 192.168.1.10",
-            "127.0.0.1"
-        )
-
-        self.join_port = self.create_input(
-            content,
-            "SERVER PORT",
-            "Enter port number",
-            "5000"
-        )
-
-        self.join_status = ctk.CTkLabel(
-            content,
-            text="",
-            font=("Segoe UI", 11),
-            text_color="#F87171"
-        )
-        self.join_status.pack(anchor="w", pady=12)
-
-        ctk.CTkButton(
-            content,
-            text="Connect to room",
-            height=50,
-            corner_radius=11,
-            font=("Segoe UI", 14, "bold"),
-            fg_color=BLUE,
-            hover_color=BLUE_HOVER,
-            command=self.connect_to_room
-        ).pack(fill="x", pady=(10, 0))
-
-    def connect_to_room(self):
-
-        ip = self.server_ip.get().strip()
-        port = self.join_port.get().strip()
 
         try:
-            ipaddress.ip_address(ip)
-        except ValueError:
-            self.join_status.configure(
-                text="Enter a valid IPv4 or IPv6 address.",
-                text_color="#F87171"
-            )
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
+
+        except OSError:
+            return "127.0.0.1"
+
+        finally:
+            probe.close()
+
+    # --------------------------------
+    # START HOST SERVER
+    # --------------------------------
+
+    def start_hosting(self, username, port):
+
+        if self.server and self.server.running:
             return
 
-        if not port.isdigit() or not 1 <= int(port) <= 65535:
-            self.join_status.configure(
-                text="Enter a valid port (1–65535).",
-                text_color="#F87171"
-            )
+        self.server_error = None
+        self.server_port = port
+        self.host_username = username
+        self.current_username = username
+
+        self.server = ChatServer(
+            host="0.0.0.0",
+            port=port
+        )
+
+        def run_server():
+            try:
+                self.server.start()
+
+            except OSError as error:
+                self.server_error = str(error)
+
+                if self.server:
+                    self.server.running = False
+
+        self.server_thread = threading.Thread(
+            target=run_server,
+            name="ChatterboxServer",
+            daemon=True
+        )
+
+        self.server_thread.start()
+
+        self.root.after(
+            100,
+            self.check_server_startup
+        )
+
+    # --------------------------------
+    # CHECK SERVER STATUS
+    # --------------------------------
+
+    def check_server_startup(self):
+
+        if self.server_error:
+            error = self.server_error
+
+            if self.server:
+                self.server.stop()
+
+            if isinstance(self.current_view, ChatterboxHost):
+                self.current_view.set_host_status(
+                    f"Could not start server: {error}"
+                )
+
             return
 
-        self.join_status.configure(
-            text="Details valid. Client connection comes next.",
-            text_color="#4ADE80"
+        if self.server and self.server.running:
+            self.connect_host_to_server()
+            return
+
+        if self.server_thread and self.server_thread.is_alive():
+            self.root.after(
+                100,
+                self.check_server_startup
+            )
+
+        elif isinstance(self.current_view, ChatterboxHost):
+            self.current_view.set_host_status(
+                "Server stopped before it could start."
+            )
+
+    # --------------------------------
+    # CONNECT HOST TO OWN SERVER
+    # --------------------------------
+
+    def connect_host_to_server(self):
+
+        self.host_client = ChatClient()
+
+        self.host_client.on_message = (
+            lambda message: self.root.after(
+                0,
+                self.handle_server_message,
+                message
+            )
         )
 
-        print(
-            f"{self.username} wants to connect to {ip}:{port}"
+        self.host_client.on_disconnect = (
+            lambda: self.root.after(
+                0,
+                self.handle_disconnect
+            )
         )
+
+        success, result = self.host_client.connect(
+            "127.0.0.1",
+            self.server_port,
+            self.host_username
+        )
+
+        if not success:
+
+            if isinstance(self.current_view, ChatterboxHost):
+                self.current_view.set_host_status(
+                    f"Could not connect to room: {result}"
+                )
+
+            self.stop_server()
+            return
+
+        ip_address = self.get_lan_ip()
+
+        self.open_chat_screen(
+            self.host_username,
+            f"{ip_address}:{self.server_port}"
+        )
+
+    # --------------------------------
+    # CONNECT AS A JOINING CLIENT
+    # --------------------------------
+
+    def connect_to_room(self, username, host_ip, port):
+
+        self.join_client = ChatClient()
+
+        self.join_client.on_message = (
+            lambda message: self.root.after(
+                0,
+                self.handle_server_message,
+                message
+            )
+        )
+
+        self.join_client.on_disconnect = (
+            lambda: self.root.after(
+                0,
+                self.handle_disconnect
+            )
+        )
+
+        def connect_in_background():
+
+            success, result = self.join_client.connect(
+                host_ip,
+                port,
+                username
+            )
+
+            self.root.after(
+                0,
+                self.finish_join_connection,
+                success,
+                result,
+                username,
+                host_ip,
+                port
+            )
+
+        threading.Thread(
+            target=connect_in_background,
+            daemon=True
+        ).start()
+
+    # --------------------------------
+    # FINISH JOIN CONNECTION
+    # --------------------------------
+
+    def finish_join_connection(
+        self,
+        success,
+        result,
+        username,
+        host_ip,
+        port
+    ):
+
+        if not success:
+
+            if self.join_client:
+                self.join_client.disconnect()
+                self.join_client = None
+
+            if isinstance(self.current_view, ChatterboxJoin):
+
+                self.current_view.show_status(
+                    f"Connection failed: {result}",
+                    False
+                )
+
+                self.current_view.connect_button.configure(
+                    state="normal",
+                    text="Connect to Room     →"
+                )
+
+            return
+
+        self.current_username = username
+
+        self.open_chat_screen(
+            username,
+            f"{host_ip}:{port}"
+        )
+
+    # --------------------------------
+    # HANDLE SERVER MESSAGES
+    # --------------------------------
+
+    def handle_server_message(self, message):
+
+        # Save messages if the chat screen hasn't opened yet
+        if not self.chat_view:
+            self.pending_server_messages.append(message)
+            return
+
+        message_type = message.get("type")
+
+        # Regular chat message
+        if message_type == "message":
+
+            username = message.get("username", "Unknown")
+
+            # Prevent displaying our own message twice
+            if username == self.current_username:
+                return
+
+            self.chat_view.add_message(
+                username,
+                message.get("content", ""),
+                own=False,
+                timestamp=message.get("timestamp")
+            )
+
+        # System notification
+        elif message_type == "system":
+
+            self.chat_view.add_system_message(
+                message.get("content", "")
+            )
+
+        # Updated participant list
+        elif message_type == "users":
+
+            users = message.get("users", [])
+
+            colors = [
+                "#147D68",
+                "#C68F62",
+                "#6F91C7",
+                "#9A79B8",
+                "#D18B9C"
+            ]
+
+            members = [
+                (
+                    name,
+                    name[:2].upper(),
+                    colors[index % len(colors)]
+                )
+                for index, name in enumerate(users)
+            ]
+
+            self.chat_view.update_members(members)
+
+        # Server error
+        elif message_type == "error":
+
+            self.chat_view.add_system_message(
+                f"Server error: {message.get('content', '')}"
+            )
+
+    # --------------------------------
+    # HANDLE DISCONNECTION
+    # --------------------------------
+
+    def handle_disconnect(self):
+
+         if not self.chat_view:
+            return
+
+         self.chat_view.add_system_message(
+            "Disconnected from the server. Returning to the home screen..."
+         )
+
+         # Give the user a moment to read the notification
+         self.root.after(
+            1500,
+            self.return_to_welcome_after_disconnect
+         )
+
+    def return_to_welcome_after_disconnect(self):
+
+         if not self.chat_view:
+            return
+
+         self.chat_view = None
+         self.current_username = None
+
+         if self.join_client:
+            self.join_client = None
+
+         if self.host_client:
+            self.host_client = None
+
+         self.pending_server_messages = []
+
+         self.show_welcome()
+
+    # --------------------------------
+    # OPEN CHAT SCREEN
+    # --------------------------------
+
+    def open_chat_screen(self, username, room_code):
+
+        self.chat_view = ChatterboxChat(
+            self.root,
+            username=username,
+            room_name="General Room",
+            room_code=room_code,
+            members=[
+                (
+                    username,
+                    username[:2].upper(),
+                    "#147D68"
+                )
+            ],
+            on_send=self.send_chat_message,
+            on_leave=self.leave_chat,
+            load_samples=False
+        )
+
+        self._show_view(self.chat_view)
+
+        self.chat_view.add_system_message(
+            "Your room is live. You are connected to the local server."
+        )
+
+        # Process messages received while the screen was opening
+        pending_messages = self.pending_server_messages
+        self.pending_server_messages = []
+
+        for message in pending_messages:
+            self.handle_server_message(message)
+
+    # --------------------------------
+    # SEND CHAT MESSAGE
+    # --------------------------------
+
+    def send_chat_message(self, username, message):
+
+        active_client = self.host_client or self.join_client
+
+        if active_client and active_client.connected:
+
+            success = active_client.send_message(message)
+
+            if not success and self.chat_view:
+                self.chat_view.add_system_message(
+                    "Message could not be sent."
+                )
+
+    # --------------------------------
+    # LEAVE SCREENS / CHAT
+    # --------------------------------
+
+    def leave_host_screen(self):
+
+        self.stop_server()
+        self.show_welcome()
+
+    def leave_chat(self):
+
+        self.stop_server()
+
+        self.chat_view = None
+        self.current_username = None
+        self.pending_server_messages = []
+
+        self.show_welcome()
+
+    # --------------------------------
+    # STOP SERVER AND CLIENTS
+    # --------------------------------
+
+    def stop_server(self):
+
+        if self.host_client:
+            self.host_client.disconnect()
+            self.host_client = None
+
+        if self.join_client:
+            self.join_client.disconnect()
+            self.join_client = None
+
+        if self.server:
+            self.server.stop()
+
+        self.server = None
+        self.server_thread = None
+        self.server_error = None
+
+        self.current_username = None
+        self.pending_server_messages = []
+
+    # --------------------------------
+    # CLOSE APPLICATION
+    # --------------------------------
+
+    def close_application(self):
+
+        self.stop_server()
+        self.root.destroy()
 
 
 # --------------------------------
@@ -621,8 +533,11 @@ class Chatterbox:
 
 if __name__ == "__main__":
 
+    ctk.set_appearance_mode("light")
+    ctk.set_default_color_theme("green")
+
     root = ctk.CTk()
 
-    app = Chatterbox(root)
+    app = ChatterboxApp(root)
 
     root.mainloop()

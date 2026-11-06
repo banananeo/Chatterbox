@@ -80,9 +80,13 @@ class ChatClient:
     # SEND JSON DATA
     # --------------------------------
 
+        # --------------------------------
+    # SEND JSON DATA
+    # --------------------------------
+
     def send_json(self, message):
 
-        if not self.connected:
+        if not self.connected or not self.client_socket:
             return False
 
         try:
@@ -96,6 +100,9 @@ class ChatClient:
 
             with self.send_lock:
 
+                if not self.connected or not self.client_socket:
+                    return False
+
                 self.client_socket.sendall(data)
 
             return True
@@ -103,6 +110,18 @@ class ChatClient:
         except OSError:
 
             self.connected = False
+            self.disconnect_event.set()
+
+            try:
+                self.client_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+            try:
+                self.client_socket.close()
+            except OSError:
+                pass
+
             return False
 
     # --------------------------------

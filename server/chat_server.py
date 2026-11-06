@@ -218,18 +218,24 @@ class ChatServer:
             if username is not None:
 
                 with self.clients_lock:
+                    was_registered = client_socket in self.clients
                     self.clients.pop(client_socket, None)
 
-                print(f"{username} disconnected")
+                if was_registered and self.running:
 
-                self.broadcast({
-                    "type": "system",
-                    "content": f"{username} left the room"
-                })
+                    print(f"{username} disconnected")
 
-                self.broadcast_user_list()
+                    self.broadcast({
+                        "type": "system",
+                        "content": f"{username} left the room"
+                    })
 
-            client_socket.close()
+                    self.broadcast_user_list()
+
+            try:
+                client_socket.close()
+            except OSError:
+                pass
 
     # --------------------------------
     # SEND JSON
@@ -295,16 +301,45 @@ class ChatServer:
     # STOP SERVER
     # --------------------------------
 
+        # --------------------------------
+    # STOP SERVER
+    # --------------------------------
+
     def stop(self):
+
+        if not self.running and not self.server_socket:
+            return
 
         self.running = False
 
+        # Close the listening socket
         if self.server_socket:
 
             try:
                 self.server_socket.close()
             except OSError:
                 pass
+
+            self.server_socket = None
+
+        # Get all connected clients
+        with self.clients_lock:
+            connected_clients = list(self.clients.items())
+            self.clients.clear()
+
+        # Disconnect every connected client
+        for client_socket, info in connected_clients:
+
+            try:
+                with info["send_lock"]:
+                    client_socket.shutdown(socket.SHUT_RDWR)
+                    client_socket.close()
+
+            except OSError:
+                try:
+                    client_socket.close()
+                except OSError:
+                    pass
 
         print("\nChatterbox server stopped.")
 
