@@ -25,19 +25,7 @@ One user hosts a chat room, and others can join using the host's local IP addres
 
 ---
 
-## 🖥️ Preview
 
-> Add your actual application screenshots below to showcase the interface.
-
-| Welcome Screen | Host Room |
-|---|---|
-| Add screenshot here | Add screenshot here |
-
-| Join Room | Chat Interface |
-|---|---|
-| Add screenshot here | Add screenshot here |
-
----
 
 ## ⚙️ Tech Stack
 
